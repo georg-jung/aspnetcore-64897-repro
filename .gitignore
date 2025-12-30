@@ -1,0 +1,21 @@
+# Build artifacts
+bin/
+obj/
+
+# User-specific files
+.vs/
+*.user
+*.rsuser
+
+# Logs
+*.log
+
+# Generated files
+*.suo
+*.userprefs
+
+# ASP.NET development https cert
+*.pfx
+
+# Rider
+.idea/
