@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable lock file to support repeatable restores -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Enforce locked mode in CI to match the original repro scenario -->
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+</Project>
