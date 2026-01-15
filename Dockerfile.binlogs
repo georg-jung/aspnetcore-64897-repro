@@ -9,7 +9,7 @@ WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS publish
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
 COPY ["AspNetCore64897Repro.csproj", "./"]
 COPY ["Directory.Build.props", "./"]
@@ -19,11 +19,14 @@ COPY ["packages.lock.json", "./"]
 # This demonstrates the issue: even though restore succeeds,
 # the Microsoft.AspNetCore.App.Internal.Assets package is not restored
 # which means _framework assets won't be included in the published output
-RUN mkdir -p /binlogs && dotnet restore "AspNetCore64897Repro.csproj" --force-evaluate /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-restore.binlog
+RUN mkdir -p /binlogs && dotnet restore "AspNetCore64897Repro.csproj" /p:ContinuousIntegrationBuild=true /p:RestoreLockedMode=false -bl:/binlogs/docker-restore.binlog
 
 COPY . .
 WORKDIR "/src"
-RUN dotnet publish "AspNetCore64897Repro.csproj" --no-restore -c Release -o /app/publish /p:UseAppHost=false /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-publish.binlog
+RUN dotnet build "AspNetCore64897Repro.csproj" -c Release -o /app/build /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-build.binlog
+
+FROM build AS publish
+RUN dotnet publish "AspNetCore64897Repro.csproj" -c Release -o /app/publish /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-publish.binlog
 
 # List the wwwroot contents for comparison
 RUN echo "=== Docker publish wwwroot contents ===" && find /app/publish/wwwroot -type f 2>/dev/null | sort || echo "wwwroot not found or empty"
