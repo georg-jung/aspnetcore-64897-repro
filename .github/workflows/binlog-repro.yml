@@ -1,0 +1,115 @@
+name: Binlog Comparison - Repro for aspnetcore#64897
+
+on:
+  push:
+    branches: [ main, master, '**' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  binlog-comparison:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # ============================================================
+      # RUNNER BUILD: This works correctly
+      # ============================================================
+      - name: '[Runner] Restore with binlog'
+        run: dotnet restore /p:ContinuousIntegrationBuild=true -bl:runner-restore.binlog
+
+      - name: '[Runner] Build with binlog'
+        run: dotnet build -c Release /p:ContinuousIntegrationBuild=true --no-restore -bl:runner-build.binlog
+
+      - name: '[Runner] Publish with binlog'
+        run: dotnet publish -c Release -o runner-publish /p:ContinuousIntegrationBuild=true --no-build -bl:runner-publish.binlog
+
+      - name: '[Runner] List _framework assets'
+        run: |
+          echo "=== Runner publish _framework contents ===" 
+          if [ -d "runner-publish/wwwroot/_framework" ]; then
+            find runner-publish/wwwroot/_framework -type f | sort
+          else
+            echo "WARNING: _framework directory does not exist!"
+          fi
+
+      - name: '[Runner] List all wwwroot assets'
+        run: |
+          echo "=== Runner publish wwwroot contents ==="
+          find runner-publish/wwwroot -type f | sort
+
+      # ============================================================
+      # DOCKER BUILD: This has the issue - _framework assets missing
+      # ============================================================
+      - name: '[Docker] Build image with binlog extraction'
+        run: |
+          # Build using Dockerfile.binlogs and export binlogs
+          docker build . --file Dockerfile.binlogs --target binlog-export --output type=local,dest=./docker-binlogs
+
+      - name: '[Docker] Show extracted binlogs'
+        run: |
+          echo "=== Extracted Docker binlogs ==="
+          ls -la docker-binlogs/
+
+      - name: '[Docker] Show wwwroot file listing from Docker'
+        run: |
+          echo "=== Docker wwwroot files ==="
+          cat docker-binlogs/docker-wwwroot-files.txt
+
+      # ============================================================
+      # COMPARISON: Side by side
+      # ============================================================
+      - name: 'Compare wwwroot contents'
+        run: |
+          echo "========================================"
+          echo "COMPARISON: Runner vs Docker wwwroot"
+          echo "========================================"
+          echo ""
+          echo "--- Runner wwwroot files ---"
+          find runner-publish/wwwroot -type f | sort > /tmp/runner-wwwroot.txt
+          cat /tmp/runner-wwwroot.txt
+          echo ""
+          echo "--- Docker wwwroot files ---"
+          cat docker-binlogs/docker-wwwroot-files.txt
+          echo ""
+          echo "--- Differences (files in runner but not in docker) ---"
+          # Normalize paths for comparison
+          sed 's|runner-publish/||' /tmp/runner-wwwroot.txt > /tmp/runner-normalized.txt
+          sed 's|/app/publish/||' docker-binlogs/docker-wwwroot-files.txt > /tmp/docker-normalized.txt
+          echo "Files present in runner build but MISSING in docker build:"
+          comm -23 /tmp/runner-normalized.txt /tmp/docker-normalized.txt || true
+          echo ""
+          echo "Files present in docker build but not in runner build:"
+          comm -13 /tmp/runner-normalized.txt /tmp/docker-normalized.txt || true
+
+      # ============================================================
+      # UPLOAD ARTIFACTS
+      # ============================================================
+      - name: Upload runner binlogs
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-binlogs
+          path: |
+            runner-restore.binlog
+            runner-build.binlog
+            runner-publish.binlog
+
+      - name: Upload docker binlogs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-binlogs
+          path: docker-binlogs/
+
+      - name: Upload runner publish output
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-publish-wwwroot
+          path: runner-publish/wwwroot/
