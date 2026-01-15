@@ -25,9 +25,3 @@ README.md
 **/publish
 **/runner-publish
 **/*.binlog
-
-# added from https://github.com/dotnet/dotnet-docker/blob/bb1c8cd2b964c36e7279ccea4c4831fef8b83295/.dockerignore
-# see also https://github.com/dotnet/sdk/issues/37291#issuecomment-1921786357
-**/out
-.dotnet
-.Microsoft.DotNet.ImageBuilder

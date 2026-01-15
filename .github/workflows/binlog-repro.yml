@@ -48,22 +48,43 @@ jobs:
           find runner-publish/wwwroot -type f | sort
 
       # ============================================================
-      # DOCKER BUILD: This has the issue - _framework assets missing
+      # DOCKER BUILD (with workaround): Uses proper .dockerignore
+      # that excludes runner-publish, out, etc. - THIS WORKS
       # ============================================================
-      - name: '[Docker] Build image with binlog extraction'
+      - name: '[Docker+Workaround] Build image with binlog extraction'
         run: |
-          # Build using Dockerfile.binlogs and export binlogs
-          docker build . --file Dockerfile.binlogs --target binlog-export --output type=local,dest=./docker-binlogs
+          echo "Building with FULL .dockerignore (includes workaround exclusions)"
+          docker build . --file Dockerfile.binlogs --target binlog-export --output type=local,dest=./docker-binlogs-workaround
 
-      - name: '[Docker] Show extracted binlogs'
+      - name: '[Docker+Workaround] Show wwwroot file listing'
         run: |
-          echo "=== Extracted Docker binlogs ==="
-          ls -la docker-binlogs/
+          echo "=== Docker (with workaround) wwwroot files ==="
+          cat docker-binlogs-workaround/docker-wwwroot-files.txt
 
-      - name: '[Docker] Show wwwroot file listing from Docker'
+      # ============================================================
+      # DOCKER BUILD (without workaround): Uses minimal .dockerignore
+      # that does NOT exclude runner-publish - THIS DEMONSTRATES THE BUG
+      # ============================================================
+      - name: '[Docker-NoWorkaround] Build image with binlog extraction'
         run: |
-          echo "=== Docker wwwroot files ==="
-          cat docker-binlogs/docker-wwwroot-files.txt
+          echo "Building with MINIMAL .dockerignore (no workaround - demonstrates the issue)"
+          # Swap .dockerignore to minimal version
+          mv .dockerignore .dockerignore.full
+          mv .dockerignore.minimal .dockerignore
+          # Build - this may fail or produce incorrect output
+          docker build . --file Dockerfile.binlogs --target binlog-export --output type=local,dest=./docker-binlogs-no-workaround || echo "BUILD FAILED (expected - demonstrates aspnetcore#64897)"
+          # Restore original .dockerignore
+          mv .dockerignore .dockerignore.minimal
+          mv .dockerignore.full .dockerignore
+
+      - name: '[Docker-NoWorkaround] Show wwwroot file listing (if exists)'
+        run: |
+          echo "=== Docker (NO workaround) wwwroot files ==="
+          if [ -f "docker-binlogs-no-workaround/docker-wwwroot-files.txt" ]; then
+            cat docker-binlogs-no-workaround/docker-wwwroot-files.txt
+          else
+            echo "Build failed - no output generated (this demonstrates the issue)"
+          fi
 
       # ============================================================
       # COMPARISON: Side by side
@@ -71,25 +92,44 @@ jobs:
       - name: 'Compare wwwroot contents'
         run: |
           echo "========================================"
-          echo "COMPARISON: Runner vs Docker wwwroot"
+          echo "COMPARISON: Runner vs Docker (with workaround)"
           echo "========================================"
           echo ""
           echo "--- Runner wwwroot files ---"
           find runner-publish/wwwroot -type f | sort > /tmp/runner-wwwroot.txt
           cat /tmp/runner-wwwroot.txt
           echo ""
-          echo "--- Docker wwwroot files ---"
-          cat docker-binlogs/docker-wwwroot-files.txt
+          echo "--- Docker (with workaround) wwwroot files ---"
+          cat docker-binlogs-workaround/docker-wwwroot-files.txt
           echo ""
-          echo "--- Differences (files in runner but not in docker) ---"
+          echo "--- Differences ---"
           # Normalize paths for comparison
           sed 's|runner-publish/||' /tmp/runner-wwwroot.txt > /tmp/runner-normalized.txt
-          sed 's|/app/publish/||' docker-binlogs/docker-wwwroot-files.txt > /tmp/docker-normalized.txt
+          sed 's|/app/publish/||' docker-binlogs-workaround/docker-wwwroot-files.txt > /tmp/docker-normalized.txt
           echo "Files present in runner build but MISSING in docker build:"
           comm -23 /tmp/runner-normalized.txt /tmp/docker-normalized.txt || true
           echo ""
           echo "Files present in docker build but not in runner build:"
           comm -13 /tmp/runner-normalized.txt /tmp/docker-normalized.txt || true
+
+      - name: 'Summary'
+        run: |
+          echo "========================================"
+          echo "SUMMARY: aspnetcore#64897 Reproduction"
+          echo "========================================"
+          echo ""
+          echo "This workflow demonstrates the issue where Docker builds"
+          echo "may fail or produce different results than runner builds."
+          echo ""
+          echo "WORKAROUND: Add the following to .dockerignore:"
+          echo "  **/publish"
+          echo "  **/runner-publish"
+          echo "  **/*.binlog"
+          echo "  **/out"
+          echo "  .dotnet"
+          echo "  .Microsoft.DotNet.ImageBuilder"
+          echo ""
+          echo "See: https://github.com/dotnet/sdk/issues/37291#issuecomment-1921786357"
 
       # ============================================================
       # UPLOAD ARTIFACTS
@@ -103,11 +143,18 @@ jobs:
             runner-build.binlog
             runner-publish.binlog
 
-      - name: Upload docker binlogs
+      - name: Upload docker binlogs (with workaround)
         uses: actions/upload-artifact@v4
         with:
-          name: docker-binlogs
-          path: docker-binlogs/
+          name: docker-binlogs-workaround
+          path: docker-binlogs-workaround/
+
+      - name: Upload docker binlogs (no workaround)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-binlogs-no-workaround
+          path: docker-binlogs-no-workaround/
 
       - name: Upload runner publish output
         uses: actions/upload-artifact@v4
