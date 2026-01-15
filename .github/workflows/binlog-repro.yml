@@ -21,10 +21,11 @@ jobs:
           dotnet-version: 10.0.x
 
       # ============================================================
-      # RUNNER BUILD: This works correctly
+      # RUNNER BUILD: Works correctly, uses RestoreLockedMode=false
+      # for better binlog comparison with Docker builds
       # ============================================================
-      - name: '[Runner] Restore with binlog'
-        run: dotnet restore /p:ContinuousIntegrationBuild=true -bl:runner-restore.binlog
+      - name: '[Runner] Restore with binlog (no locked mode)'
+        run: dotnet restore /p:ContinuousIntegrationBuild=true /p:RestoreLockedMode=false -bl:runner-restore.binlog
 
       - name: '[Runner] Build with binlog'
         run: dotnet build -c Release /p:ContinuousIntegrationBuild=true --no-restore -bl:runner-build.binlog
