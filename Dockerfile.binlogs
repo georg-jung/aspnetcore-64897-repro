@@ -23,10 +23,10 @@ RUN mkdir -p /binlogs && dotnet restore "AspNetCore64897Repro.csproj" /p:Continu
 
 COPY . .
 WORKDIR "/src"
-RUN dotnet build "AspNetCore64897Repro.csproj" -c Release -o /app/build /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-build.binlog
+RUN dotnet build "AspNetCore64897Repro.csproj" --no-restore -c Release -o /app/build /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-build.binlog
 
 FROM build AS publish
-RUN dotnet publish "AspNetCore64897Repro.csproj" -c Release -o /app/publish /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-publish.binlog
+RUN dotnet publish "AspNetCore64897Repro.csproj" --no-restore -c Release -o /app/publish /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-publish.binlog
 
 # List the wwwroot contents for comparison
 RUN echo "=== Docker publish wwwroot contents ===" && find /app/publish/wwwroot -type f 2>/dev/null | sort || echo "wwwroot not found or empty"
