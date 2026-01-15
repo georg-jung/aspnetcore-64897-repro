@@ -1,0 +1,45 @@
+# Dockerfile for binlog comparison - demonstrates aspnetcore#64897
+# This file disables locked mode to allow the build to complete,
+# demonstrating that even without locked mode validation,
+# the Microsoft.AspNetCore.App.Internal.Assets package is not properly
+# restored inside Docker, resulting in missing _framework assets.
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS base
+WORKDIR /app
+EXPOSE 8080
+EXPOSE 8081
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+WORKDIR /src
+COPY ["AspNetCore64897Repro.csproj", "./"]
+COPY ["Directory.Build.props", "./"]
+COPY ["packages.lock.json", "./"]
+
+# Restore WITHOUT locked mode to allow build to complete
+# This demonstrates the issue: even though restore succeeds,
+# the Microsoft.AspNetCore.App.Internal.Assets package is not restored
+# which means _framework assets won't be included in the published output
+RUN mkdir -p /binlogs && dotnet restore "AspNetCore64897Repro.csproj" /p:ContinuousIntegrationBuild=true /p:RestoreLockedMode=false -bl:/binlogs/docker-restore.binlog
+
+COPY . .
+WORKDIR "/src"
+RUN dotnet build "AspNetCore64897Repro.csproj" -c Release -o /app/build /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-build.binlog
+
+FROM build AS publish
+RUN dotnet publish "AspNetCore64897Repro.csproj" -c Release -o /app/publish /p:ContinuousIntegrationBuild=true -bl:/binlogs/docker-publish.binlog
+
+# List the wwwroot contents for comparison
+RUN echo "=== Docker publish wwwroot contents ===" && find /app/publish/wwwroot -type f 2>/dev/null | sort || echo "wwwroot not found or empty"
+RUN echo "=== Docker publish _framework contents ===" && find /app/publish/wwwroot/_framework -type f 2>/dev/null | sort || echo "_framework directory does not exist!"
+
+# Create a manifest of wwwroot contents
+RUN find /app/publish/wwwroot -type f 2>/dev/null | sort > /binlogs/docker-wwwroot-files.txt || echo "wwwroot listing failed" > /binlogs/docker-wwwroot-files.txt
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "AspNetCore64897Repro.dll"]
+
+# Stage to extract binlogs and file listings
+FROM scratch AS binlog-export
+COPY --from=publish /binlogs/ /

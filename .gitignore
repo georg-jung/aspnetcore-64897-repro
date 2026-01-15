@@ -19,3 +19,6 @@ obj/
 
 # Rider
 .idea/
+
+# MSBuild binary logs
+*.binlog
